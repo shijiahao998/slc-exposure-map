@@ -14,6 +14,7 @@ The map includes:
 - Fire, EMS, and other emergency-response resources
 - Interactive radius-based facility analysis
 
-The public GitHub Pages version is fully static and does not use live transit, live traffic, backend APIs, or real-time population data.
-
 The project is only intended for visualization, spatial exploration, and public-safety exposure context.
+
+## Live Map
+👉 [See the interactive map](https://shijiahao998.github.io/slc-exposure-map/)
