@@ -1,0 +1,25 @@
+# Only the static release and its deployment configuration belong here.
+/*
+!/.gitignore
+!/README.md
+!/.github/
+!/.github/workflows/
+!/.github/workflows/pages.yml
+!/web/
+**/.env*
+**/node_modules/
+**/__pycache__/
+**/.cache/
+**/*.gpkg
+**/*.shp
+**/*.shx
+**/*.dbf
+**/*.zip
+**/*.7z
+**/*.tar
+**/*.gz
+**/*.py
+**/*.log
+**/*.bak
+**/.DS_Store
+**/Thumbs.db
