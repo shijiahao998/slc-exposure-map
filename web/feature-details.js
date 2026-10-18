@@ -8,7 +8,17 @@ const categories={crowd:'Gathering & High-Activity Places',care_education:'Healt
 export function featureDetails(feature,kind,feedVersion='') {
   const p=feature.properties||{};
   let title,rows,note='';
-  if(kind==='facility') {
+  if(kind==='vehicle') {
+    const localTime=value=>Number(value)>0?new Date(Number(value)*1000).toLocaleString('en-US'):'';
+    const vehicleModes={bus:'Bus',rail:'TRAX / rail',frontrunner:'FrontRunner',unknown:'Unknown route type'};
+    title=p.route_name||`Live UTA vehicle ${p.vehicle_id||''}`;
+    rows=[['Route',p.route_name||p.route_id],['Route ID',p.route_id],['Vehicle type',vehicleModes[p.vehicle_mode]],
+      ['Vehicle ID',p.vehicle_id],['Vehicle label',p.vehicle_label],['Trip ID',p.trip_id],['Direction ID',p.direction_id],
+      ['Bearing',present(p.bearing)?`${Number(p.bearing).toFixed(0)}°`:null],['Vehicle update',localTime(p.vehicle_timestamp)],
+      ['Feed update',localTime(p.feed_timestamp)],['Received',localTime(p.received_timestamp)],['Source','UTA Vehicle Positions via Vercel proxy']];
+    note='GTFS direction IDs are 0/1 as supplied; they do not specify a compass direction. '+
+      (p.route_matched===true||p.route_matched==='true'?`Route details match the existing static GTFS ${p.route_match_method==='trip_id'?'trip-to-route lookup':'route ID'}.`:'This route ID is not in the existing static route layer; its vehicle type is unknown.');
+  } else if(kind==='facility') {
     title=p.name||readable(p.subcategory)||'Mapped facility';
     rows=[['Category',categories[p.category]||readable(p.category)],['Subtype',readable(p.primary_subcategory||p.subcategory)],['Roles',p.roles],['Source',p.source],['Source date',p.date],['Feature ID',p.id||feature.id],['Geometry',readable(p.geometry_quality)],['Recorded status',readable(p.operational_status||p.status)],['Co-located EMS',p.ems_name],['EMS source/date',[p.ems_source,p.ems_date].filter(Boolean).join(' · ')],['Availability',p.availability]];
     note=p.warning||'Archived mapped location; current activity, staffing and availability are not verified.';

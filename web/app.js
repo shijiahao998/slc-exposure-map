@@ -4,6 +4,7 @@ import { SITE_LABELS, SITE_COLORS, enrichSensitiveFeatures, deduplicateEmergency
 import { STATIC_LAYERS } from './static-layers.js';
 import { featureDetails } from './feature-details.js';
 import { buildRailDisplay, isRail } from './rail-display.js';
+import { createLiveTransit, LIVE_TRANSIT_LAYER } from './live-transit.js';
 
 const $ = id => document.getElementById(id);
 const collection = features => ({type:'FeatureCollection',features});
@@ -14,7 +15,7 @@ const state = {ready:false, center:null, radius:1, sensitive:[], emergency:[], t
 const layerGroups = {base:[], transitRoutes:[], transitStops:[], landuse:[], parcels:[], buildings:[], buildings3d:[], sensitive:[], emergency:[], imagery:[]};
 const landuseColors = {residential:'#e2c77f',commercial:'#c58872',industrial:'#a192b0',institutional:'#789bb2',open_land:'#9bb992',recreation:'#6fa39b',unknown:'#c6c7c1'};
 const colors = ['match',['get','category'],...Object.entries(SITE_COLORS).flat(),'#c00'];
-let config, heights;
+let config, heights, liveTransit;
 async function read(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Could not load ${url} (${response.status})`);
@@ -37,6 +38,7 @@ function tileURL(name) { return new URL(`./data/${name}/{z}/{x}/{y}.pbf`,import.
 function buildingHeight() { return ['case',['>', ['coalesce',['feature-state','height_m'],0],0],['feature-state','height_m'],$('illustrative-height').checked?6:0]; }
 function applyLayers() {
   if(!state.ready) return;
+  liveTransit?.setEnabled(checked('liveTransit'));
   const imagery=checked('imagery');
   if(imagery && !map.getSource('imagery')) {
     map.addSource('imagery',{type:'raster',tileSize:256,maxzoom:16,
@@ -148,6 +150,7 @@ function updateQuery() {
 function showFeature(feature,kind,anchor,fromAnalysis=false) {
   state.popup?.remove();
   state.popupFromAnalysis=fromAnalysis;
+  state.popupKind=kind;
   state.popup=new maplibregl.Popup({closeButton:true,closeOnClick:false,maxWidth:'340px',offset:12})
     .setLngLat(anchor).setHTML(featureDetails(feature,kind,state.transitFeed)).addTo(map);
 }
@@ -167,6 +170,11 @@ function routeDistance(feature,point) {
   return closest;
 }
 function featureAt(point) {
+  const vehicles=map.queryRenderedFeatures(point,{layers:[LIVE_TRANSIT_LAYER]});
+  if(vehicles.length) {
+    vehicles.sort((a,b)=>map.project(a.geometry.coordinates).dist(point)-map.project(b.geometry.coordinates).dist(point));
+    return {feature:vehicles[0],kind:'vehicle'};
+  }
   // One handler: nearest point symbol first, then nearest route, then parcel polygon.
   const points=map.queryRenderedFeatures(point,{layers:['matches-point','emergency','sensitive','transit-stops','transit-stations','transit-selected-bus','transit-selected-rail','transit-matches-halo']});
   if(points.length) {
@@ -272,6 +280,8 @@ async function initialize() {
       const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=spec.visible!==false;input.addEventListener('change',()=>visibility([spec.id],input.checked));label.append(input,document.createTextNode(spec.label));$('extra-layers').append(label);
     }
     $('legend').innerHTML=Object.entries(SITE_LABELS).map(([k,v])=>`<div><i class="dot" style="background:${SITE_COLORS[k]}"></i>${escapeText(v)}</div>`).join('')+'<div><strong>Emergency-response resources</strong></div><div>⊞ Fire Stations</div><div>⊞ EMS Facilities</div><div><i class="dot" style="background:white;border:2px solid #c00"></i>Within selected radius</div>';
+    liveTransit=createLiveTransit({map,routeFeatures:transitRoutes.features,status:$('live-transit-status'),legend:$('live-transit-legend'),
+      onHide:()=>{if(state.popupKind==='vehicle') state.popup?.remove();}});
     state.ready=true;applyLayers();
     map.on('click',handleMapClick);
     map.on('mousemove',event=>{map.getCanvas().style.cursor=featureAt(event.point)?'pointer':checked('analysis')?'crosshair':'';});
