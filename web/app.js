@@ -1,10 +1,12 @@
 import * as maplibregl from './vendor/maplibre-gl.mjs';
 import { MILE_METERS, distanceMeters, circleFeature } from './geometry.js';
-import { SITE_LABELS, SITE_COLORS, enrichSensitiveFeatures, deduplicateEmergencyFeatures } from './facilities.js';
+import { enrichSensitiveFeatures, deduplicateEmergencyFeatures } from './facilities.js';
 import { STATIC_LAYERS } from './static-layers.js';
 import { featureDetails } from './feature-details.js';
 import { buildRailDisplay, isRail } from './rail-display.js';
 import { createLiveTransit, LIVE_TRANSIT_LAYER } from './live-transit.js';
+import { createLiveTraffic } from './live-traffic.js';
+import { HEXAGON_IMAGERY, HEXAGON_OVERVIEW } from './hexagon-imagery.js';
 
 const $ = id => document.getElementById(id);
 const collection = features => ({type:'FeatureCollection',features});
@@ -14,8 +16,8 @@ const font = ['Arial','sans-serif'];
 const state = {ready:false, center:null, radius:1, sensitive:[], emergency:[], transitStops:[], transitStations:[], transitCountGroups:[], matches:[], popup:null, popupFromAnalysis:false, transitFeed:''};
 const layerGroups = {base:[], transitRoutes:[], transitStops:[], landuse:[], parcels:[], buildings:[], buildings3d:[], sensitive:[], emergency:[], imagery:[]};
 const landuseColors = {residential:'#e2c77f',commercial:'#c58872',industrial:'#a192b0',institutional:'#789bb2',open_land:'#9bb992',recreation:'#6fa39b',unknown:'#c6c7c1'};
-const colors = ['match',['get','category'],...Object.entries(SITE_COLORS).flat(),'#c00'];
-let config, heights, liveTransit;
+const sensitiveColor = '#1d7088';
+let config, heights, liveTransit, liveTraffic;
 async function read(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Could not load ${url} (${response.status})`);
@@ -25,6 +27,25 @@ const map = new maplibregl.Map({container:'map',center:[-111.94,40.68],zoom:10.5
   maxBounds:[[-179.9,14],[-60,72.5]],renderWorldCopies:false,attributionControl:false,
   style:{version:8,sources:{},layers:[{id:'background',type:'background',paint:{'background-color':'#e9ebec'}}]}});
 map.addControl(new maplibregl.NavigationControl(),'top-right');
+map.addControl({
+  onAdd() {
+    this.container=document.createElement('div');
+    this.container.className='maplibregl-ctrl maplibregl-ctrl-group analysis-view-control';
+    const button=document.createElement('button');
+    button.id='analysis-view';button.type='button';button.textContent='Analysis View';
+    button.setAttribute('aria-pressed','false');button.disabled=true;
+    button.addEventListener('click',event=>{
+      event.stopPropagation();
+      const active=button.getAttribute('aria-pressed')!=='true';
+      button.setAttribute('aria-pressed',String(active));
+      applyAnalysisView(active);
+    });
+    this.container.addEventListener('dblclick',event=>event.stopPropagation());
+    this.container.append(button);
+    return this.container;
+  },
+  onRemove() { this.container.remove(); },
+},'top-left');
 map.addControl(new maplibregl.ScaleControl({unit:'imperial'}),'bottom-left');
 map.addControl(new maplibregl.AttributionControl({compact:true,customAttribution:'<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> · UGRC SGID (modified) · <a href="./attribution.html">Sources</a>'}));
 map.on('error', e => { $('error').textContent = `Map layer unavailable: ${e.error?.message || 'loading error'}`; $('error').hidden = false; });
@@ -39,16 +60,23 @@ function buildingHeight() { return ['case',['>', ['coalesce',['feature-state','h
 function applyLayers() {
   if(!state.ready) return;
   liveTransit?.setEnabled(checked('liveTransit'));
+  liveTraffic?.setEnabled(checked('liveTraffic'));
   const imagery=checked('imagery');
   if(imagery && !map.getSource('imagery')) {
-    map.addSource('imagery',{type:'raster',tileSize:256,maxzoom:16,
+    map.addSource('imagery',{type:'raster',tileSize:256,maxzoom:18,
       tiles:['https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'],attribution:'USGS The National Map / USDA historical imagery'});
     map.addLayer({id:'imagery',type:'raster',source:'imagery'},'us-fill');
-    layerGroups.imagery.push('imagery');
+    // Keep online imagery underneath for lower zooms, uncovered areas and loading.
+    map.addSource('hexagon-overview',HEXAGON_OVERVIEW);
+    map.addLayer({id:'hexagon-overview',type:'raster',source:'hexagon-overview',minzoom:12,maxzoom:18},'us-fill');
+    map.addSource('hexagon-imagery',HEXAGON_IMAGERY);
+    map.addLayer({id:'hexagon-imagery',type:'raster',source:'hexagon-imagery',minzoom:18},'us-fill');
+    layerGroups.imagery.push('imagery','hexagon-overview','hexagon-imagery');
   }
   for(const name of ['landuse','imagery','transitRoutes','transitStops']) visibility(layerGroups[name],checked(name));
   visibility(layerGroups.parcels,checked('landuse'));
   for(const name of ['sensitive','emergency']) visibility(layerGroups[name],checked('facilities'));
+  document.querySelectorAll('[data-static-layer]').forEach(input=>visibility([input.dataset.staticLayer],input.checked));
   $('facility-legend').hidden=!checked('facilities');
   applyRadiusAnalysis();
   visibility(layerGroups.base,true);
@@ -61,9 +89,17 @@ function applyLayers() {
   $('height-control').hidden=$('height-note').hidden=!checked('buildings3d');
   $('status').textContent=checked('buildings3d')?'3D buildings · unknown heights are illustrative':!checked('analysis')?'Radius analysis off · explore map layers':state.center?'Selected radius · straight-line distance':'Ready · click the map to choose a location';
 }
+function applyAnalysisView(active) {
+  const enabled=new Set(active?['analysis','imagery']:['transitRoutes','liveTransit']);
+  document.querySelectorAll('[data-layer]').forEach(input=>{input.checked=enabled.has(input.dataset.layer);});
+  document.querySelectorAll('[data-static-layer]').forEach(input=>{input.checked=false;});
+  // A preset disables 3D buildings as well as their tilted view.
+  map.easeTo({pitch:0,duration:300});
+  applyLayers();
+}
 function applyRadiusAnalysis() {
   const enabled=checked('analysis');
-  visibility(['radius-fill','radius-line','center','matches-halo','matches-point','transit-matches-halo','transit-selected-bus','transit-selected-rail'],enabled);
+  visibility(['radius-fill','radius-line','center','matches-halo','matches-point','matches-emergency','transit-matches-halo','transit-selected-bus','transit-selected-rail'],enabled);
   for(const id of ['radius-tools','results','map-hint']) $(id).hidden=!enabled;
   document.querySelectorAll('#radius-tools button').forEach(button=>button.disabled=!enabled);
   if(!enabled&&state.popupFromAnalysis) state.popup?.remove();
@@ -139,12 +175,11 @@ function updateQuery() {
   $('map-hint').textContent=`${state.radius} mi radius · ${state.matches.length} facility locations · ${busCount} bus stops · ${railCount} rail stops / stations`;
   $('status').textContent='Selected radius · straight-line distance';
   $('results').innerHTML=`<p class="result-meta">${state.center[1].toFixed(4)}° N, ${Math.abs(state.center[0]).toFixed(4)}° W · ${state.radius} mi radius<br>Circle area: ${(Math.PI*state.radius**2).toFixed(2)} mi²</p>
-    <div class="counts"><div class="count"><strong id="sensitive-count">${sensitive.length}</strong><span>Sensitive &amp; critical locations</span></div><div class="count"><strong id="emergency-count">${emergency.length}</strong><span>Emergency-response locations</span></div></div>
-    <div class="category-counts">${Object.entries(SITE_LABELS).map(([k,v])=>`<div><span><i class="dot" style="background:${SITE_COLORS[k]}"></i>${escapeText(v)}</span><strong>${sensitive.filter(x=>x.feature.properties.category===k).length}</strong></div>`).join('')}<div><span>Fire station roles</span><strong>${fire}</strong></div><div><span>EMS facility roles</span><strong>${ems}</strong></div></div>
+    <div class="counts"><div class="count"><strong id="emergency-count">${emergency.length}</strong><span>Emergency-Response Resources</span><span class="note">Fire Stations: ${fire}<br>EMS Facilities: ${ems}</span></div><div class="count"><strong id="sensitive-count">${sensitive.length}</strong><span>Sensitive &amp; Critical Facilities</span></div></div>
     <div class="category-counts"><div><span><i class="dot" style="background:transparent;border:2px solid #008ad0"></i>Bus stops</span><strong id="bus-stop-count">${busCount}</strong></div><div><span><i class="dot" style="background:transparent;border:2px solid #9b40bd"></i>Rail stops / stations</span><strong id="rail-stop-count">${railCount}</strong></div></div>
     <p class="note">Transit counts use only static GTFS. Bus-only stops count as bus; stops served by rail count as rail. Parent or canonical station IDs are counted once when provided; otherwise each stop ID counts once. The current prepared data has no station-grouping IDs, so distinct platform IDs remain separate. Transit counts are excluded from facility totals.</p>
     <p class="note">Fire and EMS roles may share a location. Counts use the archived county dataset, including matching facilities whose base layer is hidden.</p>
-    <details ${state.matches.length?'open':''}><summary>${state.matches.length} matching locations · nearest first</summary><ul class="result-list">${state.matches.map((x,i)=>`<li><button type="button" data-result="${i}"><strong>${escapeText(x.feature.properties.name||x.feature.properties.subcategory.replaceAll('_',' '))}</strong><small>${escapeText(x.feature.properties.category==='emergency'?x.feature.properties.roles:SITE_LABELS[x.feature.properties.category])} · ${(x.distance/MILE_METERS).toFixed(2)} mi</small></button></li>`).join('')}</ul></details>`;
+    <details ${state.matches.length?'open':''}><summary>${state.matches.length} matching locations · nearest first</summary><ul class="result-list">${state.matches.map((x,i)=>`<li><button type="button" data-result="${i}"><strong>${escapeText(x.feature.properties.name||x.feature.properties.subcategory.replaceAll('_',' '))}</strong><small>${escapeText(x.feature.properties.facility_group)} · ${(x.distance/MILE_METERS).toFixed(2)} mi</small></button></li>`).join('')}</ul></details>`;
   $('results').querySelectorAll('[data-result]').forEach(b=>b.addEventListener('click',()=>showFacility(state.matches[Number(b.dataset.result)].feature)));
 }
 function showFeature(feature,kind,anchor,fromAnalysis=false) {
@@ -176,7 +211,7 @@ function featureAt(point) {
     return {feature:vehicles[0],kind:'vehicle'};
   }
   // One handler: nearest point symbol first, then nearest route, then parcel polygon.
-  const points=map.queryRenderedFeatures(point,{layers:['matches-point','emergency','sensitive','transit-stops','transit-stations','transit-selected-bus','transit-selected-rail','transit-matches-halo']});
+  const points=map.queryRenderedFeatures(point,{layers:['matches-point','matches-emergency','emergency','sensitive','transit-stops','transit-stations','transit-selected-bus','transit-selected-rail','transit-matches-halo']});
   if(points.length) {
     points.sort((a,b)=>map.project(a.geometry.coordinates).dist(point)-map.project(b.geometry.coordinates).dist(point));
     const feature=points[0];
@@ -251,7 +286,7 @@ async function initialize() {
     layer('transitStops','transit-stops','transit-stops','circle',{'circle-color':'#ffffff','circle-radius':3.5,'circle-stroke-color':'#286d93','circle-stroke-width':1.5},{minzoom:11,filter:['==',['get','mode'],'bus']});
     layer('transitStops','transit-stations','transit-stations','circle',{'circle-color':transitColor,'circle-radius':5.5,'circle-stroke-color':'#ffffff','circle-stroke-width':1.5});
     source('sensitive',collection(state.sensitive));source('emergency',collection(state.emergency));
-    layer('sensitive','sensitive','sensitive','circle',{'circle-color':colors,'circle-radius':['interpolate',['linear'],['zoom'],9,3,14,6],'circle-stroke-color':'white','circle-stroke-width':1});
+    layer('sensitive','sensitive','sensitive','circle',{'circle-color':sensitiveColor,'circle-radius':['interpolate',['linear'],['zoom'],9,3,14,6],'circle-stroke-color':'white','circle-stroke-width':1});
     // Draw emergency resources as square markers to distinguish them from sensitive sites.
     const canvas=document.createElement('canvas');canvas.width=24;canvas.height=24;const ctx=canvas.getContext('2d');ctx.fillStyle='#222';ctx.fillRect(2,2,20,20);ctx.strokeStyle='white';ctx.lineWidth=2;ctx.strokeRect(2,2,20,20);ctx.fillStyle='white';ctx.fillRect(10,6,4,12);ctx.fillRect(6,10,12,4);map.addImage('emergency-icon',ctx.getImageData(0,0,24,24));
     layer('emergency','emergency','emergency','symbol',{}, {layout:{'icon-image':'emergency-icon','icon-size':0.75,'icon-allow-overlap':true}});
@@ -272,21 +307,24 @@ async function initialize() {
         filter:['==',['get','analysis_kind'],kind],layout:{visibility:'visible'}});
     }
     layer(null,'matches-halo','matches','circle',{'circle-radius':10,'circle-color':'#fff7ce','circle-opacity':0.75,'circle-stroke-color':'#cc0000','circle-stroke-width':2});
-    layer(null,'matches-point','matches','circle',{'circle-radius':5,'circle-color':colors,'circle-stroke-color':'white','circle-stroke-width':1});
+    layer(null,'matches-point','matches','circle',{'circle-radius':5,'circle-color':sensitiveColor,'circle-stroke-color':'white','circle-stroke-width':1},{filter:['!=',['get','category'],'emergency']});
+    layer(null,'matches-emergency','matches','symbol',{}, {filter:['==',['get','category'],'emergency'],layout:{'icon-image':'emergency-icon','icon-size':0.75,'icon-allow-overlap':true}});
     layer(null,'center','center','circle',{'circle-radius':6,'circle-color':'#c00','circle-stroke-color':'white','circle-stroke-width':2});
     for(const spec of STATIC_LAYERS) {
       const geo=await read(spec.url);source(spec.id,geo);
-      map.addLayer({id:spec.id,type:spec.type||'fill',source:spec.id,paint:spec.paint||{'fill-color':'#278579','fill-opacity':0.25},layout:{visibility:spec.visible===false?'none':'visible'}},'radius-fill');
-      const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=spec.visible!==false;input.addEventListener('change',()=>visibility([spec.id],input.checked));label.append(input,document.createTextNode(spec.label));$('extra-layers').append(label);
+      map.addLayer({id:spec.id,type:spec.type||'fill',source:spec.id,paint:spec.paint||{'fill-color':'#278579','fill-opacity':0.25},layout:{visibility:'none'}},'radius-fill');
+      const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.dataset.staticLayer=spec.id;input.checked=false;input.addEventListener('change',()=>visibility([spec.id],input.checked));label.append(input,document.createTextNode(spec.label));$('extra-layers').append(label);
     }
-    $('legend').innerHTML=Object.entries(SITE_LABELS).map(([k,v])=>`<div><i class="dot" style="background:${SITE_COLORS[k]}"></i>${escapeText(v)}</div>`).join('')+'<div><strong>Emergency-response resources</strong></div><div>⊞ Fire Stations</div><div>⊞ EMS Facilities</div><div><i class="dot" style="background:white;border:2px solid #c00"></i>Within selected radius</div>';
+    $('legend').innerHTML=`<div><strong>⊞ Emergency-Response Resources</strong><br>Fire Stations · EMS Facilities</div><div><i class="dot" style="background:${sensitiveColor}"></i><strong>Sensitive &amp; Critical Facilities</strong><br>All other sensitive and critical locations/assets</div><p class="note">A red ring marks facilities within the selected radius.</p>`;
     liveTransit=createLiveTransit({map,routeFeatures:transitRoutes.features,status:$('live-transit-status'),legend:$('live-transit-legend'),
       onHide:()=>{if(state.popupKind==='vehicle') state.popup?.remove();}});
+    liveTraffic=createLiveTraffic({map,toggle:document.querySelector('[data-layer="liveTraffic"]'),beforeId:'buildings'});
     state.ready=true;applyLayers();
     map.on('click',handleMapClick);
     map.on('mousemove',event=>{map.getCanvas().style.cursor=featureAt(event.point)?'pointer':checked('analysis')?'crosshair':'';});
     document.querySelectorAll('[data-radius]').forEach(b=>b.addEventListener('click',()=>{state.radius=Number(b.dataset.radius);updateQuery();}));
     document.querySelectorAll('[data-layer]').forEach(b=>b.addEventListener('change',()=>{if(b.dataset.layer==='buildings3d')map.easeTo({pitch:b.checked?50:0,zoom:b.checked?Math.max(map.getZoom(),14):map.getZoom(),duration:400});if(b.dataset.layer==='buildings'&&b.checked&&map.getZoom()<12)map.easeTo({zoom:13,duration:400});applyLayers();}));
+    $('analysis-view').disabled=false;
     $('illustrative-height').addEventListener('change',applyLayers);
     $('clear').addEventListener('click',clear);
     $('reset').addEventListener('click',()=>{clear();map.fitBounds(config.bounds,{padding:35,pitch:0,duration:500});});

@@ -4,3 +4,12 @@
 .layers .legend{margin:0 0 10px 23px;padding:8px 0;border-top:0}.layers .legend summary{font-size:12px}.analysis-toggle{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin-bottom:16px}.analysis-toggle input{accent-color:#c00;width:15px;height:15px}
 
 .brand img{object-fit:contain}.feature-details{max-height:55vh;overflow:auto;padding-right:4px}.feature-details dl{display:grid;grid-template-columns:minmax(90px,0.8fr) minmax(0,1.2fr);gap:7px 10px;margin:12px 0}.feature-details dt{font-weight:700;font-size:11px}.feature-details dd{margin:0;font-size:11px;overflow-wrap:anywhere;line-height:1.4}
+
+/* Compact map preset; leave space below it for the radius hint. */
+.maplibregl-ctrl-group.analysis-view-control{background:transparent;box-shadow:0 0 0 2px #0001}
+.maplibregl-ctrl-group.analysis-view-control button{width:auto;height:30px;padding:0 10px;border-radius:4px;background:rgba(255,255,255,.78);color:#444;font:600 12px Arial,Helvetica,sans-serif;white-space:nowrap}
+.maplibregl-ctrl-group.analysis-view-control button:hover{background:rgba(255,255,255,.95)}
+.maplibregl-ctrl-group.analysis-view-control button[aria-pressed="true"]{background:#c00;color:white}
+.maplibregl-ctrl-group.analysis-view-control button:disabled{opacity:.5;cursor:default}
+#map-hint{top:50px;left:10px}
+#error{top:100px}

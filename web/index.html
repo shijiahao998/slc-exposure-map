@@ -8,7 +8,7 @@
   <title>Salt Lake County · Facility Map</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./vendor/maplibre-gl.css">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=analysis-view">
 </head>
 <body>
   <header><a href="./" class="brand"><img src="./Interlocking-U_RED.png" alt="University of Utah logo" width="36" height="36"><span><strong>Salt Lake County</strong><small>FACILITY MAP</small></span></a><div><button id="reset" type="button">County overview</button><button id="about" type="button">Map notes</button></div></header>
@@ -16,38 +16,39 @@
     <aside aria-label="Map layers and radius results">
       <div class="intro"><p class="eyebrow">INTERACTIVE AREA ANALYSIS</p><h1>Explore the Selected Area</h1><p>Click a location on the map and choose a radius to identify sensitive, critical, and emergency-response facilities within the selected area.</p></div>
       <section class="radius-controls" aria-label="Radius selection">
-        <label class="analysis-toggle"><input type="checkbox" data-layer="analysis" checked>Radius Analysis</label>
-        <div id="radius-tools">
+        <label class="analysis-toggle"><input type="checkbox" data-layer="analysis">Radius Analysis</label>
+        <div id="radius-tools" hidden>
         <div class="section-heading"><h2>Search radius</h2><button id="clear" class="text-button" type="button">Clear</button></div>
         <div class="radii"><button data-radius="0.25" aria-pressed="false">0.25 mi</button><button data-radius="0.5" aria-pressed="false">0.5 mi</button><button data-radius="1" aria-pressed="true">1 mi</button><button data-radius="2" aria-pressed="false">2 mi</button></div>
         </div>
       </section>
-      <section id="results" aria-live="polite" aria-atomic="true"><p class="empty">Select a point on the map to begin.</p></section>
+      <section id="results" hidden aria-live="polite" aria-atomic="true"><p class="empty">Select a point on the map to begin.</p></section>
       <details open class="layers"><summary>Map layers</summary>
-        <label><input type="checkbox" data-layer="imagery">Aerial imagery <small>USGS · online tiles</small></label>
-        <label><input type="checkbox" data-layer="landuse" checked>Land Use &amp; Parcels <small>Parcel classification &amp; outlines</small></label>
-        <details id="landuse-legend" class="legend" open><summary>Land Use legend</summary><div><p class="note"><i class="dot" style="background:#e2c77f"></i>Residential</p><p class="note"><i class="dot" style="background:#c58872"></i>Commercial</p><p class="note"><i class="dot" style="background:#a192b0"></i>Industrial</p><p class="note"><i class="dot" style="background:#789bb2"></i>Institutional / exempt</p><p class="note"><i class="dot" style="background:#9bb992"></i>Open / undeveloped</p><p class="note"><i class="dot" style="background:#6fa39b"></i>Recreation</p><p class="note"><i class="dot" style="background:#c6c7c1"></i>Unknown</p></div><p class="note">Assessor property classes are display proxies, not zoning.</p></details>
+        <label><input type="checkbox" data-layer="imagery">Aerial imagery <small>USGS · Hexagon overlay from zoom 12</small></label>
+        <label><input type="checkbox" data-layer="landuse">Land Use &amp; Parcels <small>Parcel classification &amp; outlines</small></label>
+        <details id="landuse-legend" class="legend" open hidden><summary>Land Use legend</summary><div><p class="note"><i class="dot" style="background:#e2c77f"></i>Residential</p><p class="note"><i class="dot" style="background:#c58872"></i>Commercial</p><p class="note"><i class="dot" style="background:#a192b0"></i>Industrial</p><p class="note"><i class="dot" style="background:#789bb2"></i>Institutional / exempt</p><p class="note"><i class="dot" style="background:#9bb992"></i>Open / undeveloped</p><p class="note"><i class="dot" style="background:#6fa39b"></i>Recreation</p><p class="note"><i class="dot" style="background:#c6c7c1"></i>Unknown</p></div><p class="note">Assessor property classes are display proxies, not zoning.</p></details>
         <label><input type="checkbox" data-layer="transitRoutes" checked>Static transit routes</label>
-        <label><input type="checkbox" data-layer="transitStops" checked>Transit stops / stations <small>Zoom in for detail</small></label>
-        <label><input type="checkbox" data-layer="liveTransit">Live Transit</label>
+        <label><input type="checkbox" data-layer="transitStops">Transit stops / stations <small>Zoom in for detail</small></label>
+        <label><input type="checkbox" data-layer="liveTraffic">Live Traffic <small>TomTom · refresh every 10 min</small></label>
+        <label><input type="checkbox" data-layer="liveTransit" checked>Live Transit</label>
         <p id="live-transit-status" class="note" role="status" aria-live="polite" hidden></p>
         <p id="live-transit-legend" class="note" hidden><span style="color:#1679a5">●</span> Bus · <span style="color:#287c4c">◆</span> TRAX/rail · <span style="color:#783fa1">■</span> FrontRunner · ? Unknown route</p>
         <label><input type="checkbox" data-layer="buildings">Building footprints <small>Zoom in for detail</small></label>
         <label><input type="checkbox" data-layer="buildings3d">3D buildings</label>
         <label id="height-control" hidden><input type="checkbox" id="illustrative-height" checked>Illustrate unknown heights at 6 m</label>
         <p id="height-note" class="note" hidden>Blue: reported OSM height · green: floor-based estimate · tan: illustrative 6 m height.</p>
-        <label><input type="checkbox" data-layer="facilities" checked>Sensitive, Critical &amp; Emergency Facilities</label>
-        <details id="facility-legend" class="legend" open><summary>Facility legend</summary><div id="legend"></div></details>
+        <label><input type="checkbox" data-layer="facilities">Sensitive, Critical &amp; Emergency Facilities</label>
+        <details id="facility-legend" class="legend" open hidden><summary>Facility legend</summary><div id="legend"></div></details>
         <div id="extra-layers"></div>
-        <p class="note">Layer switches control map visibility. When Radius Analysis is enabled, counts include the facility categories and separate static GTFS stops / stations. Matching facilities stay highlighted.</p>
+        <p class="note">Layer switches control map visibility. When Radius Analysis is enabled, counts show Emergency-Response Resources and Sensitive &amp; Critical Facilities, plus separate static GTFS stops / stations. Matching facilities stay highlighted.</p>
       </details>
 
       
       <p class="footnote">Mapped locations only. Facility availability, staffing and response times are not assessed. <a href="./attribution.html">Sources &amp; attribution</a></p>
     </aside>
-    <div class="map-wrap"><div id="map" aria-label="Interactive Salt Lake County facility map"></div><p id="map-hint">Click anywhere to identify nearby facilities</p><p id="status" role="status">Loading map…</p><p id="error" role="alert" hidden></p></div>
+    <div class="map-wrap"><div id="map" aria-label="Interactive Salt Lake County facility map"></div><p id="map-hint" hidden>Click anywhere to identify nearby facilities</p><p id="status" role="status">Loading map…</p><p id="error" role="alert" hidden></p></div>
   </main>
-  <dialog id="notes"><form method="dialog"><button class="close" aria-label="Close map notes">×</button></form><h2>About this map</h2><p>The static basemap is always enabled. Click facilities, parcels, routes or stops to inspect their recorded attributes. With Radius Analysis enabled, the same click also updates the selected area. Points take priority over routes, then parcels.</p><p>Radius counts use straight-line, great-circle distance to mapped facility points. One mile is 1,609.344 metres. The radius is not clipped to the county; the facility dataset covers Salt Lake County only.</p><p>Co-located fire and EMS records within 30 m share one response-location marker. Fire and EMS role counts can overlap. Sensitive/critical points at identical rounded coordinates share one marker.</p><p>Buildings use archived OSM heights where available; floor counts use 3 m per level. Optional tan extrusions are a 6 m illustration where height is unknown.</p><p>Live Transit shows current UTA vehicle positions through the configured Vercel proxy while enabled, refreshing about every 30 seconds. Bus and train icons identify vehicles, with blue for bus, green for TRAX/rail and purple for FrontRunner using existing static route IDs; unmatched routes use ?. Positions older than three minutes are omitted. This map does not calculate population, land-use composition, traffic conditions or exposure scores.</p><p><a href="./attribution.html">Data sources and license notices</a></p></dialog>
+  <dialog id="notes"><form method="dialog"><button class="close" aria-label="Close map notes">×</button></form><h2>About this map</h2><p>The static basemap is always enabled. Click facilities, parcels, routes or stops to inspect their recorded attributes. With Radius Analysis enabled, the same click also updates the selected area. Points take priority over routes, then parcels.</p><p>Radius counts use straight-line, great-circle distance to mapped facility points. One mile is 1,609.344 metres. The radius is not clipped to the county; the facility dataset covers Salt Lake County only.</p><p>Co-located fire and EMS records within 30 m share one response-location marker. Fire and EMS role counts can overlap. Sensitive/critical points at identical rounded coordinates share one marker.</p><p>Buildings use archived OSM heights where available; floor counts use 3 m per level. Optional tan extrusions are a 6 m illustration where height is unknown.</p><p>Live Transit shows current UTA vehicle positions through the configured Vercel proxy while enabled, refreshing about every 30 seconds. Bus and train icons identify vehicles, with blue for bus, green for TRAX/rail and purple for FrontRunner using existing static route IDs; unmatched routes use ?. Positions older than three minutes are omitted. Live Traffic displays TomTom traffic tiles through the proxy and refreshes every 10 minutes while enabled. This map does not calculate population, land-use composition or exposure scores.</p><p><a href="./attribution.html">Data sources and license notices</a></p></dialog>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
